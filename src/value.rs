@@ -11,6 +11,31 @@ pub enum OpType {
     Exp,
 }
 
+#[derive(Debug, Clone)]
+pub struct Value {
+    data: f64,
+    op: Option<Operation>,
+    grad: f64,
+}
+
+impl Value {
+    pub fn new(data: f64, op: Operation) -> Self {
+        Self {
+            data,
+            op: Some(op),
+            grad: 0.0,
+        }
+    }
+
+    pub fn new_const(data: f64) -> Self {
+        Self {
+            data,
+            op: None,
+            grad: 0.0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Context {
     values: Vec<Value>,
@@ -157,31 +182,6 @@ impl Context {
                     self.values[idx_a].grad += a.exp() * self.values[idx].grad;
                 },
             }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Value {
-    data: f64,
-    op: Option<Operation>,
-    grad: f64,
-}
-
-impl Value {
-    pub fn new(data: f64, op: Operation) -> Self {
-        Self {
-            data,
-            op: Some(op),
-            grad: 0.0,
-        }
-    }
-
-    pub fn new_const(data: f64) -> Self {
-        Self {
-            data,
-            op: None,
-            grad: 0.0,
         }
     }
 }
