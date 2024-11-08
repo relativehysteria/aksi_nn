@@ -1,4 +1,5 @@
-pub type Operation = (OpType, [usize; 2]);
+pub type Operation = (OpType, [CtxIdx; 2]);
+pub type CtxIdx = usize;
 
 #[derive(Debug, Clone)]
 pub enum OpType {
@@ -13,25 +14,25 @@ pub enum OpType {
 
 #[derive(Debug, Clone)]
 pub struct Value {
-    data: f64,
-    op: Option<Operation>,
-    grad: f64,
+    pub data: f64,
+    pub grad: f64,
+    pub op: Option<Operation>,
 }
 
 impl Value {
     pub fn new(data: f64, op: Operation) -> Self {
         Self {
             data,
-            op: Some(op),
             grad: 0.0,
+            op: Some(op),
         }
     }
 
     pub fn new_const(data: f64) -> Self {
         Self {
             data,
-            op: None,
             grad: 0.0,
+            op: None,
         }
     }
 }
@@ -48,26 +49,43 @@ impl Context {
         }
     }
 
-    pub fn push(&mut self, val: f64) -> usize {
+    pub fn push(&mut self, val: f64) -> CtxIdx {
         self.push_val(Value::new_const(val))
     }
 
-    pub fn push_val(&mut self, val: Value) -> usize {
+    pub fn push_val(&mut self, val: Value) -> CtxIdx {
         let idx = self.values.len();
         self.values.push(val);
         idx
     }
 
-    pub fn value(&self, idx: usize) -> f64 {
+    pub fn value(&self, idx: CtxIdx) -> f64 {
         self.values[idx].data
     }
 
-    pub fn grad(&self, idx: usize) -> f64 {
+    pub fn get(&self, idx: CtxIdx) -> &Value {
+        &self.values[idx]
+    }
+
+    pub fn get_mut(&mut self, idx: CtxIdx) -> &mut Value {
+        &mut self.values[idx]
+    }
+
+    pub fn values<'a>(&'a self, indices: &'a [CtxIdx])
+            -> impl Iterator<Item = f64> + 'a {
+        indices.iter().map(move |&i| self.value(i))
+    }
+
+    pub fn grad(&self, idx: CtxIdx) -> f64 {
         self.values[idx].grad
     }
 
-    fn apply_op<F>(&mut self, idx1: usize, idx2: usize,
-                   op_type: OpType, op: F) -> usize
+    pub fn clear_grad(&mut self, idx: CtxIdx) {
+        self.values[idx].grad = 0.0;
+    }
+
+    fn apply_op<F>(&mut self, idx1: CtxIdx, idx2: CtxIdx,
+                   op_type: OpType, op: F) -> CtxIdx
     where
         F: Fn(f64, f64) -> f64,
     {
@@ -75,31 +93,31 @@ impl Context {
         self.push_val(Value::new(result, (op_type, [idx1, idx2])))
     }
 
-    pub fn add(&mut self, idx1: usize, idx2: usize) -> usize {
+    pub fn add(&mut self, idx1: CtxIdx, idx2: CtxIdx) -> CtxIdx {
         self.apply_op(idx1, idx2, OpType::Add, |a, b| a + b)
     }
 
-    pub fn sub(&mut self, idx1: usize, idx2: usize) -> usize {
+    pub fn sub(&mut self, idx1: CtxIdx, idx2: CtxIdx) -> CtxIdx {
         self.apply_op(idx1, idx2, OpType::Sub, |a, b| a - b)
     }
 
-    pub fn mul(&mut self, idx1: usize, idx2: usize) -> usize {
+    pub fn mul(&mut self, idx1: CtxIdx, idx2: CtxIdx) -> CtxIdx {
         self.apply_op(idx1, idx2, OpType::Mul, |a, b| a * b)
     }
 
-    pub fn div(&mut self, idx1: usize, idx2: usize) -> usize {
+    pub fn div(&mut self, idx1: CtxIdx, idx2: CtxIdx) -> CtxIdx {
         self.apply_op(idx1, idx2, OpType::Div, |a, b| a / b)
     }
 
-    pub fn pow(&mut self, base_idx: usize, exponent_idx: usize) -> usize {
+    pub fn pow(&mut self, base_idx: CtxIdx, exponent_idx: CtxIdx) -> CtxIdx {
         self.apply_op(base_idx, exponent_idx, OpType::Pow, |a, b| a.powf(b))
     }
 
-    pub fn exp(&mut self, idx: usize) -> usize {
+    pub fn exp(&mut self, idx: CtxIdx) -> CtxIdx {
         self.apply_op(idx, 0, OpType::Exp, |a, _| a.exp())
     }
 
-    pub fn tanh(&mut self, idx: usize) -> usize {
+    pub fn tanh(&mut self, idx: CtxIdx) -> CtxIdx {
         self.apply_op(idx, 0, OpType::Tanh, |a, _| {
             let x = core::f64::consts::E.powf(2.0 * a) - 1.0;
             let y = core::f64::consts::E.powf(2.0 * a) + 1.0;
@@ -107,7 +125,11 @@ impl Context {
         })
     }
 
-    pub fn backprop(&mut self, output_idx: usize) {
+    pub fn sum(&mut self, indices: &[CtxIdx]) -> CtxIdx {
+        indices.iter().fold(self.push(0.0), |a, &b| self.add(a, b))
+    }
+
+    pub fn backward(&mut self, output_idx: CtxIdx) {
         // Reset all gradients to zero, except for the output node
         self.values.iter_mut().for_each(|v| v.grad = 0.0);
         self.values[output_idx].grad = 1.0;
